@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>DUmwelt Phone Controller – Local</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+        color: #fff;
+        font-family: -apple-system, system-ui, sans-serif;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+
+      button {
+        padding: 16px 24px;
+        font-size: 18px;
+        border-radius: 999px;
+        border: 1px solid #fff;
+        background: #111;
+        color: #fff;
+        transition: all 0.2s ease;
+      }
+
+      button.active {
+        background: rgb(10, 49, 74);
+        color: #ffffff;
+        border-color: rgb(10, 49, 74);
+      }
+
+      p {
+        max-width: 300px;
+        margin: 12px auto 0;
+        font-size: 14px;
+        opacity: 0.85;
+      }
+
+      /* Motion level indicator */
+      .meter-wrapper {
+        margin-top: 24px;
+        display: none; /* Hide the motion meter */
+      }
+
+      #motionLabel {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        opacity: 0.7;
+      }
+
+      #motionValue {
+        font-size: 14px;
+        opacity: 0.9;
+      }
+
+      #motionCircle {
+        width: 120px;
+        height: 120px;
+        margin: 12px auto 0;
+        border-radius: 50%;
+        border: 1px solid rgba(255,255,255,0.4);
+        box-shadow: 0 0 12px rgba(255,255,255,0.1);
+        background: radial-gradient(circle at 50% 50%, rgba(0,255,180,0.6), transparent 60%);
+        transform: scale(0.8);
+        opacity: 0.5;
+        transition: transform 0.08s linear, opacity 0.08s linear, box-shadow 0.08s linear;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <button id="startBtn">Start sharing motion</button>
+      <p>Hold your phone in your hand and move to influence the artwork.</p>
+      <p id="status"></p>
+
+      <div class="meter-wrapper">
+        <div id="motionLabel">Motion level</div>
+        <div id="motionValue">0.00</div>
+        <div id="motionCircle"></div>
+      </div>
+    </div>
+
+    <script>
+      // Local setup: use same-origin /motion endpoint
+      const MOTION_ENDPOINT = '/motion';
+
+      const btn = document.getElementById('startBtn');
+      const statusEl = document.getElementById('status');
+      const motionLabelEl = document.getElementById('motionLabel');
+      const motionValueEl = document.getElementById('motionValue');
+      const motionCircleEl = document.getElementById('motionCircle');
+
+      let sending = false;
+      let lastSent = 0;
+
+      function vibrate(pattern) {
+        if (navigator.vibrate) {
+          navigator.vibrate(pattern);
+        }
+      }
+
+      btn.addEventListener('click', async () => {
+        // light haptic tick on tap
+        vibrate(20);
+
+        if (!sending) {
+          await requestPermissionIfNeeded();
+          startMotion();
+        } else {
+          stopMotion();
+        }
+      });
+
+      async function requestPermissionIfNeeded() {
+        if (typeof DeviceMotionEvent !== 'undefined' &&
+            typeof DeviceMotionEvent.requestPermission === 'function') {
+          try {
+            const response = await DeviceMotionEvent.requestPermission();
+            if (response !== 'granted') {
+              statusEl.textContent = 'Motion permission denied.';
+              throw new Error('Permission denied');
+            }
+          } catch (e) {
+            console.error(e);
+            statusEl.textContent = 'Could not access motion sensors.';
+          }
+        }
+      }
+
+      function startMotion() {
+        sending = true;
+        btn.textContent = "Stop sharing motion";
+        btn.classList.add('active');
+        statusEl.textContent = 'Streaming motion…';
+
+        // stronger pulse when streaming starts
+        vibrate([80, 40, 80]);
+
+        window.addEventListener('devicemotion', motionHandler);
+      }
+
+      function stopMotion() {
+        sending = false;
+        btn.textContent = "Start sharing motion";
+        btn.classList.remove('active');
+        statusEl.textContent = 'Motion sharing paused.';
+
+        motionValueEl.textContent = '0.00';
+        motionCircleEl.style.transform = 'scale(0.8)';
+        motionCircleEl.style.opacity = '0.5';
+        motionCircleEl.style.boxShadow = '0 0 12px rgba(255,255,255,0.1)';
+
+        window.removeEventListener('devicemotion', motionHandler);
+      }
+
+      function motionHandler(ev) {
+        if (!sending) return;
+
+        const now = Date.now();
+        if (now - lastSent < 40) return; // ~25 Hz
+        lastSent = now;
+
+        const ax = ev.accelerationIncludingGravity?.x || 0;
+        const ay = ev.accelerationIncludingGravity?.y || 0;
+        const az = ev.accelerationIncludingGravity?.z || 0;
+
+        // magnitude incl. gravity (simple, expressive)
+        const mag = Math.sqrt(ax * ax + ay * ay + az * az);
+
+        // update UI meter
+        updateMotionMeter(mag);
+
+        fetch(MOTION_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ x: ax, y: ay, z: az })
+        }).catch(err => {
+          console.error('motion send error', err);
+          statusEl.textContent = 'Connection issue…';
+        });
+      }
+
+      function updateMotionMeter(mag) {
+        // mag at rest ~9.8; we care about deviations
+        const level = Math.max(0, mag - 9.8); // 0 when still
+        const clamped = Math.min(level / 8, 1); // normalise rough range 0..8
+
+        motionValueEl.textContent = level.toFixed(2);
+
+        const scale = 0.8 + clamped * 0.8;  // 0.8 → 1.6
+        const opacity = 0.4 + clamped * 0.6;
+        const glow = 12 + clamped * 40;
+
+        motionCircleEl.style.transform = `scale(${scale})`;
+        motionCircleEl.style.opacity = opacity.toString();
+        motionCircleEl.style.boxShadow = `0 0 ${glow}px rgba(0,255,180,0.7)`;
+      }
+    </script>
+  </body>
+</html>
