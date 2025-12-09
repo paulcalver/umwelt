@@ -1006,12 +1006,13 @@ function draw() {
         // QR code (only if motion not connected)
         if (!motionConnected && qrCodeImg) {
             imageMode(CENTER);
-            let qrSize = 300;
+            let qrSize = 200;
             image(qrCodeImg, width / 2, height / 2 - 100, qrSize, qrSize);
 
             // Text above QR
             fill(0, 0, 100, 1);
             textAlign(CENTER, CENTER);
+            textFont('Space Mono');
             textSize(24);
             text('Scan to connect phone', width / 2, height / 2 - 100 - qrSize / 2 - 40);
         }
@@ -1020,7 +1021,7 @@ function draw() {
         if (!audioStarted) {
             let btnY = motionConnected ? height / 2 : height / 2 + 220;
             let btnW = 300;
-            let btnH = 50;
+            let btnH = 80;
             let btnX = width / 2 - btnW / 2;
 
             // Check if hovering over text area
@@ -1035,8 +1036,25 @@ function draw() {
                 fill(0, 0, 80, 1); // Slightly dimmer
             }
             textAlign(CENTER, CENTER);
-            textSize(24);
-            text('Click to Start Audio', width / 2, btnY + btnH / 2);
+            textFont('Space Mono');
+            textSize(18);
+            text('Click to start audio & launch installation', width / 2, btnY + 15);
+            
+            // HRM link below audio button
+            if (!hrConnected) {
+                let hrmY = btnY + 50;
+                let hrmHovering = mouseX >= btnX && mouseX <= btnX + btnW &&
+                    mouseY >= hrmY - 15 && mouseY <= hrmY + 15;
+                
+                if (hrmHovering) {
+                    fill(0, 0, 100, 1); // Bright white
+                    cursor(HAND);
+                } else {
+                    fill(0, 0, 70, 1); // Dimmer
+                }
+                textSize(18);
+                text('Connect HRM (Optional)', width / 2, hrmY);
+            }
         }
 
         imageMode(CORNER);
@@ -1050,14 +1068,24 @@ function mousePressed() {
     if (!audioStarted) {
         let btnY = motionConnected ? height / 2 : height / 2 + 220;
         let btnW = 300;
-        let btnH = 50;
         let btnX = width / 2 - btnW / 2;
 
+        // Check audio button click (top part)
         if (mouseX >= btnX && mouseX <= btnX + btnW &&
-            mouseY >= btnY && mouseY <= btnY + btnH) {
+            mouseY >= btnY && mouseY <= btnY + 30) {
             audioStarted = true;
             startAudio();
             return;
+        }
+        
+        // Check HRM link click (bottom part)
+        if (!hrConnected) {
+            let hrmY = btnY + 50;
+            if (mouseX >= btnX && mouseX <= btnX + btnW &&
+                mouseY >= hrmY - 15 && mouseY <= hrmY + 15) {
+                connectHeartRate();
+                return;
+            }
         }
     }
 
